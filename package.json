@@ -1,6 +1,6 @@
 {
     "name": "kardamon",
-    "version": "0.0.0",
+    "version": "0.0.1",
     "description": "a card game engine",
     "main": "index.js",
     "scripts": {
