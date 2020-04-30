@@ -1,4 +1,4 @@
 export const world = {
     x: 800,
-    y: 480
+    y: 480,
 };
