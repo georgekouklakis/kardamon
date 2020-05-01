@@ -2,7 +2,7 @@ import Phaser from 'phaser';
 import { world } from '../kardamon-constants';
 
 export default class GameTableScene extends Phaser.Scene {
-    constructor() {
+    constructor () {
         super('game-table');
 
         this.cardGroup;
@@ -10,20 +10,20 @@ export default class GameTableScene extends Phaser.Scene {
         window.nextTableState = this.nextTableState.bind(this);
     }
 
-    preload() {
+    preload () {
         this.load.atlas('cards', 'cards.png', 'cards.json');
         this.load.image('play', 'play.png');
     }
 
-    create() {
+    create () {
         this.sampleCard = this.textures.get('cards').get(0);
 
         this.testCode();
     }
 
-    update() {}
+    update () {}
 
-    nextTableState(tableStateObject) {
+    nextTableState (tableStateObject) {
         const handSize = tableStateObject.hand.length;
         if (this.cardGroup) this.cardGroup.destroy(true);
         this.cardGroup = this.add.group();
@@ -62,7 +62,7 @@ export default class GameTableScene extends Phaser.Scene {
         });
     }
 
-    testCode() {
+    testCode () {
         const frames = this.textures.get('cards').getFrameNames();
         const deal = () => {
             const hand = [];
@@ -85,18 +85,19 @@ export default class GameTableScene extends Phaser.Scene {
             (world.y * 3) / 4,
             'play',
         );
+
         play.setInteractive();
         play.on('pointerdown', () => {
             const selectedCards = this.cardGroup
                 .getChildren()
-                .filter((card) => {
+                .filter(card => {
                     return card.isSelected;
                 })
-                .map((card) => {
+                .map(card => {
                     return card.frame.name;
                 });
 
-            hand = hand.filter((cardInHand) => {
+            hand = hand.filter(cardInHand => {
                 return !selectedCards.includes(cardInHand);
             });
 

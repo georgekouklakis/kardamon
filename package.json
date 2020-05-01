@@ -27,6 +27,7 @@
         "minimist": ">=1.2.2",
         "parcel-plugin-clean-easy": "^1.0.2",
         "parcel-plugin-static-files-copy": "^2.2.1",
+        "prettier-eslint": "^9.0.1",
         "standard-version": "^7.1.0"
     },
     "dependencies": {
@@ -58,5 +59,55 @@
                 ]
             ]
         }
+    },
+    "eslintConfig": {
+        "env": {
+            "browser": true,
+            "es6": true
+        },
+        "extends": "eslint:recommended",
+        "globals": {
+            "Atomics": "readonly",
+            "SharedArrayBuffer": "readonly"
+        },
+        "parserOptions": {
+            "ecmaVersion": 2018,
+            "sourceType": "module"
+        },
+        "rules": {
+            "indent": [
+                "error",
+                4
+            ],
+            "linebreak-style": [
+                "error",
+                "windows"
+            ],
+            "quotes": [
+                "error",
+                "single"
+            ],
+            "semi": [
+                "error",
+                "always"
+            ],
+            "eol-last": [
+                "error",
+                "always"
+            ],
+            "comma-dangle": [
+                "error",
+                "always-multiline"
+            ],
+            "space-before-function-paren": [
+                "error",
+                "always"
+            ]
+        }
+    },
+    "prettier": {
+        "tabWidth": 4,
+        "singleQuote": true,
+        "trailingComma": "all"
     }
 }
