@@ -1,11 +1,11 @@
 import Phaser from 'phaser';
-import { world } from './kardamon-constants';
+import { worldSettings } from './kardamon-constants';
 import GameTableScene from './game-table/game-table.scene';
 
 const config = {
     type: Phaser.AUTO,
-    width: world.x,
-    height: world.y,
+    width: worldSettings.width,
+    height: worldSettings.height,
     scene: [GameTableScene],
 };
 

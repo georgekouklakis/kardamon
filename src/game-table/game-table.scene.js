@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { world } from '../kardamon-constants';
+import { worldSettings, cardSettings } from '../kardamon-constants';
 
 export default class GameTableScene extends Phaser.Scene {
     constructor () {
@@ -16,8 +16,6 @@ export default class GameTableScene extends Phaser.Scene {
     }
 
     create () {
-        this.sampleCard = this.textures.get('cards').get(0);
-
         this.testCode();
     }
 
@@ -29,12 +27,12 @@ export default class GameTableScene extends Phaser.Scene {
         this.cardGroup = this.add.group();
 
         const startingPoint =
-            (world.x - (handSize * this.sampleCard.width) / 4) / 2;
+            (worldSettings.width - (handSize * cardSettings.width) / 4) / 2;
 
         tableStateObject.hand.forEach((cardInHand, index) => {
             const card = this.add.image(
-                startingPoint + (index * this.sampleCard.width) / 4,
-                (world.y * 3) / 4,
+                startingPoint + (index * cardSettings.width) / 4,
+                (worldSettings.height * 3) / 4,
                 'cards',
                 cardInHand,
             );
@@ -48,8 +46,7 @@ export default class GameTableScene extends Phaser.Scene {
                         targets: card,
                         y: {
                             value:
-                                card.y +
-                                (this.sampleCard.width / 4) * direction,
+                                card.y + (cardSettings.width / 4) * direction,
                             duration: 500,
                             ease: 'Quint.easeOut',
                         },
@@ -81,8 +78,8 @@ export default class GameTableScene extends Phaser.Scene {
         });
 
         const play = this.add.image(
-            (world.x * 5) / 6,
-            (world.y * 3) / 4,
+            (worldSettings.width * 5) / 6,
+            (worldSettings.height * 3) / 4,
             'play',
         );
 
