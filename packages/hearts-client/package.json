@@ -1,0 +1,6 @@
+{
+    "name": "hearts-client",
+    "version": "1.0.0",
+    "private": true,
+    "description": "Alpine.js Hearts game client served by game-server"
+}

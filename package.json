@@ -1,48 +1,24 @@
 {
-    "name": "kardamon",
-    "version": "0.0.1",
-    "description": "a card game engine",
-    "main": "index.js",
-    "scripts": {
-        "start": "parcel src/index.html -p 8000",
-        "build": "parcel build src/index.html --out-dir dist",
-        "release": "standard-version",
-        "test": "echo \"Error: no test specified\" && exit 1"
-    },
-    "repository": {
-        "type": "git",
-        "url": "https://github.com/georgekouklakis/kardamon.git"
-    },
-    "author": "georgekouklakis",
-    "license": "ISC",
-    "bugs": {
-        "url": "https://github.com/georgekouklakis/kardamon/issues"
-    },
-    "homepage": "https://github.com/georgekouklakis/kardamon",
-    "devDependencies": {
-        "@commitlint/cli": "^8.3.5",
-        "@commitlint/config-conventional": "^8.3.4",
-        "eslint": "^6.8.0",
-        "husky": "^4.2.5",
-        "minimist": ">=1.2.2",
-        "parcel-plugin-clean-easy": "^1.0.2",
-        "parcel-plugin-static-files-copy": "^2.2.1",
-        "prettier-eslint": "^9.0.1",
-        "standard-version": "^8.0.1"
-    },
-    "dependencies": {
-        "phaser": "^3.22.0"
-    },
-    "parcelCleanPaths": [
-        "dist"
+    "name": "hearts-monorepo",
+    "private": true,
+    "workspaces": [
+        "packages/*"
     ],
-    "staticFiles": {
-        "staticPath": "public",
-        "watcherGlob": "**"
+    "scripts": {
+        "dev": "concurrently -n game,api -c blue,green \"npm run dev -w packages/game-server\" \"npm run dev -w packages/platform-api\"",
+        "build:kardamon": "npm run build:lib -w packages/kardamon",
+        "setup": "npm install && npm run build:kardamon"
+    },
+    "devDependencies": {
+        "@commitlint/cli": "^19.0.0",
+        "@commitlint/config-conventional": "^19.0.0",
+        "concurrently": "^9.0.0",
+        "husky": "^9.0.0",
+        "standard-version": "^9.5.0"
     },
     "husky": {
         "hooks": {
-            "commit-msg": "commitlint -E  HUSKY_GIT_PARAMS"
+            "commit-msg": "commitlint -E HUSKY_GIT_PARAMS"
         }
     },
     "commitlint": {
@@ -60,54 +36,11 @@
             ]
         }
     },
-    "eslintConfig": {
-        "env": {
-            "browser": true,
-            "es6": true
-        },
-        "extends": "eslint:recommended",
-        "globals": {
-            "Atomics": "readonly",
-            "SharedArrayBuffer": "readonly"
-        },
-        "parserOptions": {
-            "ecmaVersion": 2018,
-            "sourceType": "module"
-        },
-        "rules": {
-            "indent": [
-                "error",
-                4
-            ],
-            "linebreak-style": [
-                "error",
-                "windows"
-            ],
-            "quotes": [
-                "error",
-                "single"
-            ],
-            "semi": [
-                "error",
-                "always"
-            ],
-            "eol-last": [
-                "error",
-                "always"
-            ],
-            "comma-dangle": [
-                "error",
-                "always-multiline"
-            ],
-            "space-before-function-paren": [
-                "error",
-                "always"
-            ]
-        }
-    },
-    "prettier": {
-        "tabWidth": 4,
-        "singleQuote": true,
-        "trailingComma": "all"
+    "allowScripts": {
+        "@prisma/client@5.22.0": true,
+        "@prisma/engines@5.22.0": true,
+        "esbuild@0.25.12": true,
+        "esbuild@0.28.1": true,
+        "prisma@5.22.0": true
     }
 }

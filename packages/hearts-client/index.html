@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hearts</title>
+    <script src="/kardamon-game.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3/dist/cdn.min.js"></script>
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: system-ui, sans-serif;
+            background: radial-gradient(ellipse at center, #2d6a4f 0%, #1b4332 100%);
+            min-height: 100dvh;
+            color: #fff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .panel {
+            background: rgba(0,0,0,0.45);
+            border: 1px solid rgba(255,255,255,0.12);
+            border-radius: 16px;
+            padding: 2rem;
+            width: 100%;
+            max-width: 380px;
+            display: flex;
+            flex-direction: column;
+            gap: 1.25rem;
+        }
+
+        h1 { font-size: 2rem; text-align: center; letter-spacing: 0.05em; }
+        h2 { font-size: 1rem; color: rgba(255,255,255,0.7); }
+
+        .tabs {
+            display: flex;
+            border-radius: 8px;
+            overflow: hidden;
+            border: 1px solid rgba(255,255,255,0.2);
+        }
+        .tabs button {
+            flex: 1;
+            padding: 0.5rem;
+            background: transparent;
+            color: rgba(255,255,255,0.6);
+            border: none;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: background 0.15s, color 0.15s;
+        }
+        .tabs button.active {
+            background: rgba(255,255,255,0.15);
+            color: #fff;
+            font-weight: 600;
+        }
+
+        input {
+            width: 100%;
+            padding: 0.65rem 0.85rem;
+            border-radius: 8px;
+            border: 1px solid rgba(255,255,255,0.25);
+            background: rgba(255,255,255,0.1);
+            color: #fff;
+            font-size: 0.95rem;
+            outline: none;
+        }
+        input::placeholder { color: rgba(255,255,255,0.4); }
+        input:focus { border-color: rgba(255,255,255,0.5); background: rgba(255,255,255,0.15); }
+
+        .btn {
+            width: 100%;
+            padding: 0.7rem;
+            border-radius: 8px;
+            border: none;
+            font-size: 0.95rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: opacity 0.15s;
+        }
+        .btn:hover { opacity: 0.9; }
+        .btn-primary { background: #2d9b63; color: #fff; }
+        .btn-ghost {
+            background: transparent;
+            color: rgba(255,255,255,0.6);
+            border: 1px solid rgba(255,255,255,0.2);
+        }
+
+        .error { color: #f87171; font-size: 0.85rem; }
+
+        .user-bar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-size: 0.85rem;
+            color: rgba(255,255,255,0.7);
+        }
+        .user-bar button {
+            background: none;
+            border: none;
+            color: rgba(255,255,255,0.5);
+            cursor: pointer;
+            font-size: 0.8rem;
+        }
+
+        .room-row {
+            display: flex;
+            gap: 0.5rem;
+        }
+        .room-row input { flex: 1; }
+        .room-row .btn { width: auto; padding: 0.65rem 1rem; }
+
+        .rooms-list {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+        .room-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: rgba(255,255,255,0.07);
+            border-radius: 8px;
+            padding: 0.5rem 0.75rem;
+            font-size: 0.85rem;
+        }
+        .room-item .btn { width: auto; padding: 0.35rem 0.75rem; font-size: 0.8rem; }
+
+        .game-wrap {
+            position: fixed;
+            inset: 0;
+            display: flex;
+            flex-direction: column;
+        }
+        .leave-btn {
+            position: fixed;
+            top: 0.75rem;
+            right: 0.75rem;
+            z-index: 100;
+            padding: 0.4rem 0.9rem;
+            border-radius: 6px;
+            border: 1px solid rgba(255,255,255,0.3);
+            background: rgba(0,0,0,0.4);
+            color: rgba(255,255,255,0.8);
+            cursor: pointer;
+            font-size: 0.8rem;
+        }
+        #game-container { flex: 1; display: flex; }
+        #game-container kardamon-game { flex: 1; }
+    </style>
+</head>
+<body x-data="heartsApp()" x-init="init()">
+
+    <!-- Auth screen -->
+    <div class="panel" x-show="screen === 'auth'" x-cloak>
+        <h1>♥ Hearts</h1>
+
+        <div class="tabs">
+            <button :class="{ active: tab === 'login' }" @click="tab = 'login'">Log in</button>
+            <button :class="{ active: tab === 'register' }" @click="tab = 'register'">Register</button>
+        </div>
+
+        <form @submit.prevent="submitAuth" style="display:flex;flex-direction:column;gap:0.75rem">
+            <template x-if="tab === 'register'">
+                <input x-model="form.name" placeholder="Display name" autocomplete="username" />
+            </template>
+            <input x-model="form.email" type="email" placeholder="Email" autocomplete="email" required />
+            <input x-model="form.password" type="password" placeholder="Password" autocomplete="current-password" required />
+            <p x-show="authError" x-text="authError" class="error"></p>
+            <button class="btn btn-primary" type="submit" x-text="tab === 'login' ? 'Log in' : 'Create account'"></button>
+        </form>
+
+        <button class="btn btn-ghost" @click="playAsGuest">Play as guest</button>
+    </div>
+
+    <!-- Lobby screen -->
+    <div class="panel" x-show="screen === 'lobby'" x-cloak>
+        <div class="user-bar">
+            <span>Playing as <strong x-text="playerName"></strong></span>
+            <button @click="logout" x-show="!!token">Log out</button>
+        </div>
+
+        <h1>♥ Hearts</h1>
+
+        <div style="display:flex;flex-direction:column;gap:0.5rem">
+            <h2>Join or create a room</h2>
+            <div class="room-row">
+                <input x-model="roomInput" placeholder="Room ID (blank = new room)" @keydown.enter="joinRoom" />
+                <button class="btn btn-primary" @click="joinRoom">Join</button>
+            </div>
+        </div>
+
+        <template x-if="rooms.length > 0">
+            <div style="display:flex;flex-direction:column;gap:0.5rem">
+                <h2>Open rooms</h2>
+                <div class="rooms-list">
+                    <template x-for="r in rooms" :key="r.id">
+                        <div class="room-item">
+                            <span x-text="`Room ${r.id} · ${r.players} player${r.players !== 1 ? 's' : ''}`"></span>
+                            <button class="btn btn-ghost" @click="roomInput = r.id; joinRoom()">Join</button>
+                        </div>
+                    </template>
+                </div>
+            </div>
+        </template>
+    </div>
+
+    <!-- Game screen -->
+    <div class="game-wrap" x-show="screen === 'game'" x-cloak>
+        <div id="game-container"></div>
+        <button class="leave-btn" @click="leaveGame">Leave</button>
+    </div>
+
+<script>
+const GAME_WS   = (location.protocol === 'https:' ? 'wss:' : 'ws:') + '//' + location.host;
+const GAME_HTTP = location.origin;
+const PLATFORM  = (typeof window !== 'undefined' && window.PLATFORM_API_URL) || 'http://localhost:3002';
+
+function heartsApp() {
+    return {
+        screen: 'auth',
+        tab: 'login',
+        form: { name: '', email: '', password: '' },
+        authError: '',
+        token: null,
+        playerName: 'Guest',
+        roomInput: '',
+        rooms: [],
+        gameEl: null,
+
+        init() {
+            const saved = localStorage.getItem('hearts-token');
+            if (saved) {
+                try {
+                    const payload = JSON.parse(atob(saved.split('.')[1]));
+                    this.token = saved;
+                    this.playerName = payload.name;
+                    this.screen = 'lobby';
+                    this.fetchRooms();
+                } catch {
+                    localStorage.removeItem('hearts-token');
+                }
+            }
+        },
+
+        async submitAuth() {
+            this.authError = '';
+            const endpoint = this.tab === 'login' ? 'login' : 'register';
+            const body = this.tab === 'login'
+                ? { email: this.form.email, password: this.form.password }
+                : { email: this.form.email, password: this.form.password, name: this.form.name };
+
+            const res = await fetch(`${PLATFORM}/auth/${endpoint}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body),
+            });
+            const data = await res.json();
+            if (!res.ok) {
+                this.authError = data.error ?? 'Something went wrong';
+                return;
+            }
+            this.token = data.token;
+            this.playerName = data.user.name;
+            localStorage.setItem('hearts-token', data.token);
+            this.screen = 'lobby';
+            this.fetchRooms();
+        },
+
+        playAsGuest() {
+            this.playerName = 'Guest';
+            this.screen = 'lobby';
+            this.fetchRooms();
+        },
+
+        logout() {
+            localStorage.removeItem('hearts-token');
+            this.token = null;
+            this.playerName = 'Guest';
+            this.screen = 'auth';
+        },
+
+        async fetchRooms() {
+            try {
+                const res = await fetch(`${GAME_HTTP}/rooms`);
+                this.rooms = await res.json();
+            } catch { this.rooms = []; }
+        },
+
+        joinRoom() {
+            const room = this.roomInput.trim() || Math.random().toString(36).slice(2, 8);
+            let wsUrl = `${GAME_WS}/game?room=${encodeURIComponent(room)}&name=${encodeURIComponent(this.playerName)}`;
+            if (this.token) wsUrl += `&token=${this.token}`;
+
+            const container = document.getElementById('game-container');
+            container.innerHTML = '';
+
+            const el = document.createElement('kardamon-game');
+            el.setAttribute('ws-url', wsUrl);
+            el.setAttribute('card-sheet-url', '/cards.json');
+            container.appendChild(el);
+            this.gameEl = el;
+            this.screen = 'game';
+        },
+
+        leaveGame() {
+            this.gameEl?.remove();
+            this.gameEl = null;
+            this.screen = 'lobby';
+            this.fetchRooms();
+        },
+    };
+}
+</script>
+</body>
+</html>
