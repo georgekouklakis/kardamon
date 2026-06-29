@@ -1,4 +1,4 @@
-import Fastify from 'fastify';
+import Fastify, { type FastifyRequest, type FastifyReply } from 'fastify';
 import jwtPlugin from '@fastify/jwt';
 import cors from '@fastify/cors';
 import { PrismaClient } from '@prisma/client';
@@ -15,14 +15,16 @@ const fastify = Fastify({ logger: { level: 'info' } });
 await fastify.register(cors, { origin: true });
 await fastify.register(jwtPlugin, { secret: JWT_SECRET });
 
-// Decorates request.jwtVerify and adds fastify.authenticate hook
-fastify.decorate('authenticate', async function (req: any, reply: any) {
-    try {
-        await req.jwtVerify();
-    } catch (err) {
-        reply.send(err);
+fastify.decorate(
+    'authenticate',
+    async (req: FastifyRequest, reply: FastifyReply) => {
+        try {
+            await req.jwtVerify();
+        } catch (err) {
+            reply.send(err);
+        }
     }
-});
+);
 
 await fastify.register(authRoutes, { prefix: '/auth' });
 await fastify.register(scoresRoutes, { prefix: '/scores' });

@@ -5,6 +5,7 @@ import cors from '@fastify/cors';
 import jwt from 'jsonwebtoken';
 import { fileURLToPath } from 'url';
 import { dirname, resolve } from 'path';
+import type { WebSocket } from 'ws';
 import { RoomManager } from './room-manager.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -41,8 +42,7 @@ interface GameQuery {
 fastify.get<{ Querystring: GameQuery }>(
     '/game',
     { websocket: true },
-    (connection, req) => {
-        const ws = (connection as any).socket ?? connection;
+    (socket: WebSocket, req) => {
         const { room = 'default', token, name = 'Guest' } = req.query;
 
         let playerId: string;
@@ -54,7 +54,7 @@ fastify.get<{ Querystring: GameQuery }>(
                 playerId = payload.sub;
                 playerName = payload.name;
             } catch {
-                ws.close(1008, 'Invalid token');
+                socket.close(1008, 'Invalid token');
                 return;
             }
         } else {
@@ -62,10 +62,10 @@ fastify.get<{ Querystring: GameQuery }>(
             playerName = name;
         }
 
-        const err = rooms.joinGame(ws, room, playerId, playerName);
+        const err = rooms.joinGame(socket, room, playerId, playerName);
         if (err) {
-            ws.send(JSON.stringify({ error: err }));
-            ws.close();
+            socket.send(JSON.stringify({ error: err }));
+            socket.close();
         }
     }
 );
