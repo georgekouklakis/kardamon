@@ -9,8 +9,7 @@
         "build:lib": "vite build --config vite.lib.config.ts",
         "preview": "vite preview",
         "check": "svelte-check --tsconfig ./tsconfig.json",
-        "lint": "eslint src/",
-        "release": "standard-version"
+        "lint": "eslint src/"
     },
     "files": ["dist"],
     "exports": {
