@@ -66,7 +66,7 @@ export function getBotPlay(game: HeartsGame, playerId: string): string | null {
         // Try to lose the trick: play highest card that still loses
         const currentWinner = [...game.currentTrick]
             .filter(e => suit(e.card) === ledSuit)
-            .sort((a, b) => rankValue(b) - rankValue(a))[0];
+            .sort((a, b) => rankValue(b.card) - rankValue(a.card))[0];
 
         const losing = following.filter(
             c => rankValue(c) < rankValue(currentWinner?.card ?? '')

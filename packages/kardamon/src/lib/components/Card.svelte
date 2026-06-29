@@ -55,7 +55,7 @@
         style={spriteStyle()}
         aria-label="{frame ? cardId : `${rank} of ${suit}`}{selected ? ', selected' : ''}"
         aria-pressed={selected}
-        onclick={onselect}
+        onclick={() => onselect?.()}
         onkeydown={handleKeydown}
     >
         {#if !frame}
@@ -156,10 +156,14 @@
     .corner {
         display: flex;
         flex-direction: column;
-        align-items: center;
+        align-items: flex-start;
         line-height: 1;
         font-size: 0.7rem;
         font-weight: 700;
+    }
+
+    .top-left {
+        justify-self: start;
     }
 
     .bottom-right {

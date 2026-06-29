@@ -17,9 +17,11 @@ class KardamonGame extends HTMLElement {
             try {
                 const res = await fetch(sheetUrl);
                 const json = await res.json() as CardSheet;
-                // Resolve 'image' relative to the JSON file so the integrator can
-                // use a relative path in the JSON without worrying about the page URL.
-                cardSheet = { ...json, image: new URL(json.image, sheetUrl).href };
+                // Resolve 'image' relative to the JSON file's absolute URL.
+                // sheetUrl may be a relative path ("/cards.json"), so resolve it
+                // against the page first so new URL() has a valid absolute base.
+                const absSheetUrl = new URL(sheetUrl, location.href).href;
+                cardSheet = { ...json, image: new URL(json.image, absSheetUrl).href };
             } catch {
                 // Sheet failed to load — Card falls back to text rendering.
             }

@@ -112,7 +112,9 @@ export class RoomManager {
                 submitPass(game, p.id, getBotPass(p));
             }
             this.broadcast(game);
-            if (game.phase === 'playing') this.runBotPhase(game);
+            // submitPass may have transitioned phase to 'playing' — check at runtime
+            const phaseAfterPass = (game as HeartsGame).phase;
+            if (phaseAfterPass === 'playing') this.runBotPhase(game);
             return;
         }
 
