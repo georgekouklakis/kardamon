@@ -6,20 +6,38 @@
         cards: CardId[];
         actions: Action[];
         hiddenCards?: Set<CardId>;
+        busy?: boolean;
+        message?: string;
         onsubmit?: (type: string, cards: CardId[], rects: DOMRect[]) => void;
     }
 
-    let { cards, actions, hiddenCards = new Set(), onsubmit }: Props = $props();
+    let { cards, actions, hiddenCards = new Set(), busy = false, message = '', onsubmit }: Props = $props();
 
     let selected = $state(new Set<CardId>());
     // Refs to .card-arc divs — getBoundingClientRect() on these gives the actual
     // viewport position of each visually-rotated card (not the un-rotated slot).
     let cardArcRefs: HTMLElement[] = [];
 
+    const isMyTurn = $derived(actions.length > 0);
+
+    // The server only sends `actions` on our turn, so between turns there's nothing
+    // to render a button from. Remember the last real ones and keep showing them,
+    // disabled, instead of swapping the button row out for text — that swap is what
+    // caused the whole table to jump every time it wasn't our turn.
+    let lastActions = $state<Action[]>([]);
+    $effect(() => {
+        if (actions.length > 0) lastActions = actions;
+    });
+    const displayActions = $derived(isMyTurn ? actions : lastActions);
+
     // Only the cards that are both selected AND still in hand. This replaces the
     // old $effect that cleared the whole selection on every cards reference change
     // (which fired on every opponent-turn state update, not just when my cards changed).
     const validSelected = $derived(new Set(cards.filter(c => selected.has(c))));
+
+    // How many cards the current action needs — server-provided, so the client never
+    // has to know per-game whether e.g. "play" means one card or "pass" means three.
+    const selectCount = $derived(actions.find(a => a.requiresSelection)?.selectCount ?? 1);
 
     function fanAngle(index: number, total: number): number {
         if (total <= 1) return 0;
@@ -29,13 +47,20 @@
     }
 
     function toggleCard(cardId: CardId) {
-        const next = new Set(selected);
-        if (next.has(cardId)) {
+        if (selected.has(cardId)) {
+            const next = new Set(selected);
             next.delete(cardId);
-        } else {
-            next.add(cardId);
+            selected = next;
+            return;
         }
-        selected = next;
+        if (selectCount === 1) {
+            // Picking a new card replaces the selection outright — the common case
+            // (any single-card play) feels like a radio button, not a checkbox.
+            selected = new Set([cardId]);
+            return;
+        }
+        if (selected.size >= selectCount) return; // already at the cap — ignore
+        selected = new Set([...selected, cardId]);
     }
 
     function handleAction(action: Action) {
@@ -54,6 +79,8 @@
 </script>
 
 <section class="hand-area" aria-label="Your hand">
+    <p class="status-message" aria-live="polite">{message}</p>
+
     <div
         class="hand"
         role="group"
@@ -85,26 +112,24 @@
         {/each}
     </div>
 
-    {#if actions.length > 0}
-        <div class="actions" role="group" aria-label="Turn actions">
-            {#each actions as action}
-                <button
-                    class="btn"
-                    class:btn-primary={action.requiresSelection}
-                    class:btn-secondary={!action.requiresSelection}
-                    disabled={action.requiresSelection && validSelected.size === 0}
-                    onclick={() => handleAction(action)}
-                    aria-label={action.requiresSelection
-                        ? `${action.label} ${validSelected.size} selected card${validSelected.size !== 1 ? 's' : ''}`
-                        : action.label}
-                >
-                    {action.label}{action.requiresSelection ? ` (${validSelected.size})` : ''}
-                </button>
-            {/each}
-        </div>
-    {:else}
-        <p class="waiting" aria-live="polite">Waiting for other players…</p>
-    {/if}
+    <!-- Always mounted (reserved min-height in CSS) so its presence/emptiness never
+         shifts the cards above it — only its contents change with displayActions. -->
+    <div class="actions" role="group" aria-label="Turn actions">
+        {#each displayActions as action}
+            <button
+                class="btn"
+                class:btn-primary={action.requiresSelection}
+                class:btn-secondary={!action.requiresSelection}
+                disabled={!isMyTurn || busy || (action.requiresSelection && validSelected.size !== action.selectCount)}
+                onclick={() => handleAction(action)}
+                aria-label={action.requiresSelection
+                    ? `${action.label} ${validSelected.size} selected card${validSelected.size !== 1 ? 's' : ''}`
+                    : action.label}
+            >
+                {action.label}{action.requiresSelection ? ` (${validSelected.size})` : ''}
+            </button>
+        {/each}
+    </div>
 </section>
 
 <style>
@@ -183,6 +208,10 @@
         gap: 0.75rem;
         flex-wrap: wrap;
         justify-content: center;
+        /* Reserved even when displayActions is empty (before any action has ever
+           arrived) so the row's height never depends on its contents. */
+        min-height: 2.75rem;
+        align-content: center;
     }
 
     .btn {
@@ -230,9 +259,14 @@
         background: #d1d5db;
     }
 
-    .waiting {
-        color: rgba(255, 255, 255, 0.5);
+    .status-message {
+        color: rgba(255, 255, 255, 0.7);
         font-size: 0.875rem;
+        font-style: italic;
+        text-align: center;
         margin: 0;
+        /* Reserved whether or not there's currently a message, so text appearing/
+           disappearing/changing length never shifts the hand below it. */
+        min-height: 1.25rem;
     }
 </style>

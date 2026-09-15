@@ -1,4 +1,4 @@
-import { dealDeck, suit, rankValue, cardPoints } from './deck.js';
+import { dealDeck, suit, rankValue, cardPoints, sortHand } from './deck.js';
 import type { HeartsGame, GamePlayer, PassDirection, TrickEntry } from './types.js';
 
 const PASS_DIRECTIONS: PassDirection[] = ['left', 'right', 'across', 'hold'];
@@ -218,14 +218,17 @@ export function getStateFor(game: HeartsGame, playerId: string) {
             id: p.id,
             name: p.name,
             seat: p.seat,
-            hand: p.id === playerId ? p.hand : undefined,
+            hand: p.id === playerId ? sortHand(p.hand) : undefined,
             handCount: p.hand.length,
             isActive: p.seat === activeSeat,
             status: (game.phase !== 'waiting' && game.phase !== 'passing')
                 ? `${p.score} pts`
                 : undefined,
         })),
-        table: game.currentTrick.map(e => e.card),
+        table: game.currentTrick.map(e => ({
+            card: e.card,
+            playerId: game.players.find(p => p.seat === e.seat)?.id,
+        })),
         actions: buildActions(game, playerId),
         phase: game.phase,
         message: buildMessage(game, playerId),
@@ -242,13 +245,13 @@ function buildActions(game: HeartsGame, playerId: string) {
                 across: 'Pass across ↑',
                 hold:   'Keep cards',
             }[game.passDirection];
-            return [{ type: 'pass', label, requiresSelection: true }];
+            return [{ type: 'pass', label, requiresSelection: true, selectCount: 3 }];
         }
     }
     if (game.phase === 'playing') {
         const player = game.players.find(p => p.id === playerId);
         if (player?.seat === currentActiveSeat(game)) {
-            return [{ type: 'play', label: 'Play', requiresSelection: true }];
+            return [{ type: 'play', label: 'Play', requiresSelection: true, selectCount: 1 }];
         }
     }
     return [];

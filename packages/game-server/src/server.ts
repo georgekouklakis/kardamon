@@ -37,13 +37,15 @@ interface GameQuery {
     room?: string;
     token?: string;
     name?: string;
+    guestId?: string;
+    game?: string;
 }
 
 fastify.get<{ Querystring: GameQuery }>(
     '/game',
     { websocket: true },
     (socket: WebSocket, req) => {
-        const { room = 'default', token, name = 'Guest' } = req.query;
+        const { room = 'default', token, name = 'Guest', guestId, game } = req.query;
 
         let playerId: string;
         let playerName: string;
@@ -58,11 +60,13 @@ fastify.get<{ Querystring: GameQuery }>(
                 return;
             }
         } else {
-            playerId = `anon-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+            // A client-persisted guestId lets a guest reconnect to their same seat
+            // after a refresh; without one, fall back to a fresh anonymous identity.
+            playerId = guestId ? `guest-${guestId}` : `anon-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
             playerName = name;
         }
 
-        const err = rooms.joinGame(socket, room, playerId, playerName);
+        const err = rooms.joinGame(socket, room, playerId, playerName, game);
         if (err) {
             socket.send(JSON.stringify({ error: err }));
             socket.close();

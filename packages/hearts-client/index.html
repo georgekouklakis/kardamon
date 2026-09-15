@@ -181,7 +181,15 @@
             <button @click="logout" x-show="!!token">Log out</button>
         </div>
 
-        <h1>♥ Hearts</h1>
+        <h1 x-text="gameType === 'kseri' ? '🂡 Kseri' : '♥ Hearts'"></h1>
+
+        <div style="display:flex;flex-direction:column;gap:0.5rem">
+            <h2>Game</h2>
+            <div class="tabs">
+                <button :class="{ active: gameType === 'hearts' }" @click="gameType = 'hearts'">Hearts</button>
+                <button :class="{ active: gameType === 'kseri' }" @click="gameType = 'kseri'">Kseri</button>
+            </div>
+        </div>
 
         <div style="display:flex;flex-direction:column;gap:0.5rem">
             <h2>Join or create a room</h2>
@@ -197,8 +205,8 @@
                 <div class="rooms-list">
                     <template x-for="r in rooms" :key="r.id">
                         <div class="room-item">
-                            <span x-text="`Room ${r.id} · ${r.players} player${r.players !== 1 ? 's' : ''}`"></span>
-                            <button class="btn btn-ghost" @click="roomInput = r.id; joinRoom()">Join</button>
+                            <span x-text="`Room ${r.id} · ${r.game} · ${r.players} player${r.players !== 1 ? 's' : ''}`"></span>
+                            <button class="btn btn-ghost" @click="roomInput = r.id; gameType = r.game; joinRoom()">Join</button>
                         </div>
                     </template>
                 </div>
@@ -226,6 +234,7 @@ function heartsApp() {
         token: null,
         playerName: 'Guest',
         roomInput: '',
+        gameType: 'hearts',
         rooms: [],
         gameEl: null,
 
@@ -288,10 +297,20 @@ function heartsApp() {
             } catch { this.rooms = []; }
         },
 
+        guestId() {
+            let id = localStorage.getItem('hearts-guest-id');
+            if (!id) {
+                id = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2);
+                localStorage.setItem('hearts-guest-id', id);
+            }
+            return id;
+        },
+
         joinRoom() {
             const room = this.roomInput.trim() || Math.random().toString(36).slice(2, 8);
-            let wsUrl = `${GAME_WS}/game?room=${encodeURIComponent(room)}&name=${encodeURIComponent(this.playerName)}`;
+            let wsUrl = `${GAME_WS}/game?room=${encodeURIComponent(room)}&name=${encodeURIComponent(this.playerName)}&game=${encodeURIComponent(this.gameType)}`;
             if (this.token) wsUrl += `&token=${this.token}`;
+            else wsUrl += `&guestId=${encodeURIComponent(this.guestId())}`;
 
             const container = document.getElementById('game-container');
             container.innerHTML = '';

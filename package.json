@@ -7,7 +7,7 @@
     "scripts": {
         "dev": "concurrently -n game,api -c blue,green \"npm run dev -w packages/game-server\" \"npm run dev -w packages/platform-api\"",
         "build:kardamon": "npm run build:lib -w packages/kardamon",
-        "setup": "npm install && npm run build:kardamon"
+        "setup": "npm install && npm run build:kardamon && cp -n packages/game-server/.env.example packages/game-server/.env && cp -n packages/platform-api/.env.example packages/platform-api/.env && npm run db:push -w packages/platform-api"
     },
     "devDependencies": {
         "@commitlint/cli": "^19.0.0",

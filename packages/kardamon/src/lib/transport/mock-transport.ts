@@ -1,5 +1,5 @@
 import type { Transport } from './transport';
-import type { GameState, PlayerAction } from '../types/protocol';
+import type { GameState, PlayerAction, TablePlay } from '../types/protocol';
 
 const SUITS = ['clubs', 'diamonds', 'hearts', 'spades'] as const;
 const RANKS = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A'] as const;
@@ -21,7 +21,7 @@ interface OpponentState {
 export class MockTransport implements Transport {
     private callback: ((state: GameState) => void) | null = null;
     private myHand: string[] = [];
-    private tableCards: string[] = [];
+    private tableCards: TablePlay[] = [];
     private activeSeat = 0;
     private timeouts: ReturnType<typeof setTimeout>[] = [];
 
@@ -48,11 +48,15 @@ export class MockTransport implements Transport {
         this.callback = callback;
     }
 
+    onActionError(_callback: (message: string) => void) {
+        // MockTransport never rejects actions.
+    }
+
     async submitAction(action: PlayerAction) {
         if (action.type === 'play' && action.cards.length > 0) {
             this.myHand = this.myHand.filter(c => !action.cards.includes(c));
             if (this.myHand.length === 0) this.myHand = deal(10);
-            this.tableCards = action.cards;
+            this.tableCards = action.cards.map(card => ({ card, playerId: MY_ID }));
         } else {
             this.tableCards = [];
         }
@@ -71,7 +75,7 @@ export class MockTransport implements Transport {
             if (opp.handCount > 0 && Math.random() > 0.35) {
                 const n = Math.min(Math.floor(Math.random() * 2) + 1, opp.handCount);
                 opp.handCount -= n;
-                this.tableCards = [...this.tableCards, ...deal(n)];
+                this.tableCards = [...this.tableCards, ...deal(n).map(card => ({ card, playerId: opp.id }))];
             }
 
             // Emit after acting so the played cards are visible immediately
@@ -122,8 +126,8 @@ export class MockTransport implements Transport {
             table: this.tableCards,
             actions: this.activeSeat === 0
                 ? [
-                      { type: 'play', label: 'Play', requiresSelection: true },
-                      { type: 'pass', label: 'Pass', requiresSelection: false },
+                      { type: 'play', label: 'Play', requiresSelection: true, selectCount: 1 },
+                      { type: 'pass', label: 'Pass', requiresSelection: false, selectCount: 0 },
                   ]
                 : [],
             phase: 'playing',

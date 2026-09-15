@@ -38,12 +38,9 @@ npm run db:studio         # Prisma Studio GUI
 
 ```bash
 npm run setup
-cp packages/game-server/.env.example packages/game-server/.env
-cp packages/platform-api/.env.example packages/platform-api/.env
-cd packages/platform-api && npm run db:push
 ```
 
-Then open http://localhost:3001 after `npm run dev`.
+This installs dependencies, builds the kardamon IIFE, copies `.env.example` → `.env` for `game-server` and `platform-api` (without overwriting existing `.env` files), and runs `prisma db push` (which also generates the Prisma client). Then open http://localhost:3001 after `npm run dev`.
 
 ## Commit conventions
 

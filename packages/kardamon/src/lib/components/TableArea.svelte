@@ -1,40 +1,32 @@
 <script lang="ts">
-    import type { CardId } from '../types/protocol';
+    import type { CardId, TablePlay } from '../types/protocol';
     import Card from './Card.svelte';
 
-    interface PlayGroup {
-        cards: CardId[];
-        rotation: number; // degrees; reflects the direction the play came from
-    }
-
     interface Props {
-        playGroups: PlayGroup[];
-        message?: string;
-        hiddenGroups?: Set<number>;
+        table: TablePlay[];
+        rotationFor: (playerId: string | undefined) => number;
+        hiddenCards?: Set<CardId>;
     }
 
-    let { playGroups, message, hiddenGroups = new Set() }: Props = $props();
-
-    const totalCards = $derived(playGroups.reduce((n, g) => n + g.cards.length, 0));
+    let { table, rotationFor, hiddenCards = new Set() }: Props = $props();
 </script>
 
-<div class="table-area" role="region" aria-label={totalCards > 0 ? `${totalCards} card${totalCards !== 1 ? 's' : ''} on table` : 'Table is empty'}>
-    {#if message}
-        <p class="message" aria-live="polite">{message}</p>
-    {/if}
-
+<div
+    class="table-area"
+    role="region"
+    aria-label={table.length > 0 ? `${table.length} card${table.length !== 1 ? 's' : ''} on the table` : 'Table is empty'}
+>
     <div class="table-cards">
-        {#each playGroups as group, gi}
+        {#each table as entry, i (entry.card)}
             <div
-                class="play-group"
-                class:hidden={hiddenGroups.has(gi)}
-                style="--gi: {gi}; --rotation: {group.rotation}deg"
+                class="table-card-slot"
+                class:hidden={hiddenCards.has(entry.card)}
+                style="--i: {i}"
+                data-card={entry.card}
             >
-                {#each group.cards as cardId, ci}
-                    <div class="table-card-slot" style="--i: {ci}">
-                        <Card {cardId} interactive={false} />
-                    </div>
-                {/each}
+                <div class="table-card-inner" style="--rotation: {rotationFor(entry.playerId)}deg">
+                    <Card cardId={entry.card} interactive={false} />
+                </div>
             </div>
         {/each}
     </div>
@@ -48,47 +40,22 @@
         justify-content: center;
         gap: 0.5rem;
         height: 100%;
+        width: 100%;
     }
 
-    .message {
-        color: rgba(255, 255, 255, 0.8);
-        font-size: 0.85rem;
-        font-style: italic;
-        margin: 0;
-        text-align: center;
-    }
-
-    /* Fixed anchor point; all play-groups are absolutely stacked inside. */
+    /* Every played/dealt card is rendered flat in table order — no per-trick or
+       per-game grouping. Cascade: each subsequent card overlaps the previous one,
+       leaving a 26px corner peek (72px card - 46px overlap); later cards (higher
+       index) sit on top via z-index. Centered as a whole via flex justify-content. */
     .table-cards {
-        position: relative;
-        width: 200px;
-        height: 108px;
-    }
-
-    /* Each play is stacked directly on top of the previous one.
-       left: 50% + translateX(-50%) centres every group at the same horizontal axis
-       regardless of how many cards are in that play.
-       z-index: var(--gi) ensures the most recent play is always on top. */
-    .play-group {
-        position: absolute;
-        top: 0;
-        left: 50%;
-        transform: translateX(-50%) rotate(var(--rotation));
-        transform-origin: center center;
         display: flex;
-        z-index: var(--gi);
+        justify-content: center;
+        align-items: center;
+        flex-wrap: wrap;
+        min-height: 108px;
+        row-gap: 0.5rem;
     }
 
-    .play-group.hidden {
-        opacity: 0;
-    }
-
-    /*
-     * Classic playing-card cascade: each card is offset 46px left (72px card − 26px peek).
-     * 26px exposes the top-left corner pip (5px padding + ~20px rank/suit text) of the
-     * card beneath. Later cards have higher z-index so they sit on top, matching
-     * the convention that the most-recently-played card is always fully visible.
-     */
     .table-card-slot {
         position: relative;
         margin-left: -46px;
@@ -98,5 +65,15 @@
 
     .table-card-slot:first-child {
         margin-left: 0;
+    }
+
+    .table-card-slot.hidden {
+        opacity: 0;
+    }
+
+    /* Rotation lives on an inner wrapper so it doesn't fight with the slot's own
+       cascade positioning (which uses normal flex flow + margin, not transform). */
+    .table-card-inner {
+        transform: rotate(var(--rotation));
     }
 </style>

@@ -14,12 +14,21 @@ export interface Action {
     type: string;
     label: string;
     requiresSelection: boolean;
+    selectCount: number; // exact number of hand cards this action needs selected
+}
+
+// One card on the table, and who put it there. `playerId` is omitted for cards that
+// were dealt face-up rather than played (e.g. Kseri's initial pile) — the client
+// renders those with no "flew in from a player" animation/rotation.
+export interface TablePlay {
+    card: CardId;
+    playerId?: string;
 }
 
 export interface GameState {
     myId: string;
     players: Player[];
-    table: CardId[];    // cards currently in the center (last played trick)
+    table: TablePlay[]; // cards currently on the table, in stacking/play order
     actions: Action[];  // available actions for the local player; empty when not my turn
     phase?: string;
     message?: string;   // optional contextual message (e.g. "Bob asked for a King")

@@ -36,29 +36,75 @@
 
     const slots = $derived(OPPONENT_SLOTS[opponents.length] ?? OPPONENT_SLOTS[3]);
 
+    // Subtle tilt per table slot so played cards look like they arrived from that direction.
+    const SLOT_ROTATION: Record<string, number> = {
+        north:          3,
+        'north-west':   7,
+        'north-east':  -7,
+        west:          12,
+        east:         -12,
+        south:         -3,
+    };
+
+    // The only game knowledge here is "which direction is this player's seat in
+    // relation to me" — purely a layout fact from `players`/`opponents`, not a rule
+    // of any specific game. Cards with no playerId (e.g. a game's initial face-up
+    // deal) get no directional tilt.
+    function rotationFor(playerId: string | undefined): number {
+        if (!playerId || !gameState) return 0;
+        if (playerId === gameState.myId) return SLOT_ROTATION['south'] ?? 0;
+        const idx = opponents.findIndex(o => o.id === playerId);
+        return idx >= 0 ? (SLOT_ROTATION[slots[idx]] ?? 0) : 0;
+    }
+
     $effect(() => {
+        transport.onActionError((message) => {
+            // The server rejected our last play — it never left our hand, and since it
+            // was never speculatively added to the table (see handleSubmit below),
+            // there's nothing to roll back beyond un-hiding it.
+            if (pendingPlay) {
+                const cards = pendingPlay.cards;
+                hiddenCards = new Set([...hiddenCards].filter(c => !cards.includes(c)));
+                pendingPlay = null;
+                playInFlight = false;
+            }
+            announcement = message;
+        });
+
         transport.onStateUpdate((newState) => {
             const prevGs = gameState;
             gameState = newState;
 
-            if (prevGs) {
-                // Trick cleared — reset the display pile
-                if (newState.table.length === 0 && prevGs.table.length > 0) {
-                    playGroups = [];
-                }
+            // TableArea renders `table` directly — there's nothing to reconstruct or
+            // reset here. The diffing below exists purely to decide whether a newly
+            // appeared table card should fly in from somewhere (and from where).
+            let ownPlayAnimated = false;
 
-                // Opponent appended cards to the trick
-                if (newState.table.length > prevGs.table.length) {
-                    const prevActive = prevGs.players.find(p => p.isActive);
-                    const prefixUnchanged = prevGs.table.every((c, i) => c === newState.table[i]);
-                    if (prefixUnchanged && prevActive && prevActive.id !== newState.myId) {
-                        const newCards = newState.table.slice(prevGs.table.length);
-                        const oppIdx = opponents.findIndex(o => o.id === prevActive.id);
-                        const rotation = SLOT_ROTATION[slots[oppIdx]] ?? 0;
-                        playGroups = [...playGroups, { cards: newCards, rotation }];
-                        triggerOpponentAnimation(prevActive.id, newCards, playGroups.length - 1);
+            if (prevGs && newState.table.length > prevGs.table.length) {
+                const prefixUnchanged = prevGs.table.every((e, i) => e.card === newState.table[i]?.card);
+                if (prefixUnchanged) {
+                    for (const entry of newState.table.slice(prevGs.table.length)) {
+                        if (pendingPlay && entry.playerId === newState.myId) {
+                            const rects = pendingPlay.rects;
+                            pendingPlay = null;
+                            ownPlayAnimated = true;
+                            animateOwnPlay(entry.card, rects);
+                        } else if (entry.playerId && entry.playerId !== newState.myId) {
+                            animateOpponentPlay(entry.card, entry.playerId);
+                        }
+                        // else: a dealt (unattributed) card — just appears, no animation.
                     }
                 }
+            }
+
+            // Our own play resolved but didn't land on the table as a new entry above
+            // — e.g. it was immediately captured/consumed rather than placed. Nothing
+            // to animate; just clear the pending/hidden state so the hand reflects
+            // the confirmed truth.
+            if (pendingPlay && !ownPlayAnimated) {
+                pendingPlay = null;
+                playInFlight = false;
+                hiddenCards = new Set();
             }
 
             const active = newState.players.find(p => p.isActive);
@@ -88,112 +134,95 @@
 
     let tableSlotEl: HTMLElement | null = $state(null);
     let opponentSlotEls: HTMLElement[] = [];
-    let flyingCards: FlyingCard[] = $state([]);
+    let flyingCard: FlyingCard | null = $state(null);
     let hiddenCards: Set<CardId> = $state(new Set());
-    interface PlayGroup {
-        cards: CardId[];
-        rotation: number;
+
+    // Our own submitted-but-not-yet-confirmed play. The card is hidden from the hand
+    // immediately for responsiveness, but nothing is added to the table until the
+    // server confirms it (see onStateUpdate) — never speculatively. That way a
+    // rejection just means un-hiding it; there's never a phantom table entry to roll
+    // back, and no race with an animation that assumed the play would land.
+    let pendingPlay: { cards: CardId[]; rects: DOMRect[] } | null = $state(null);
+    // True from the moment a play is submitted until it's confirmed or rejected.
+    // Blocks a second play from starting in that window.
+    let playInFlight = $state(false);
+
+    function getCardRect(card: CardId): DOMRect | null {
+        if (!tableSlotEl) return null;
+        const el = tableSlotEl.querySelector(`[data-card="${CSS.escape(card)}"]`);
+        return el ? (el as HTMLElement).getBoundingClientRect() : null;
     }
 
-    // Subtle tilt per table slot so played cards look like they arrived from that direction.
-    const SLOT_ROTATION: Record<string, number> = {
-        north:          3,
-        'north-west':   7,
-        'north-east':  -7,
-        west:          12,
-        east:         -12,
-        south:         -3,
-    };
+    async function runFlyAnimation(sourceRect: DOMRect, card: CardId) {
+        const endRect = getCardRect(card);
+        const rotation = rotationFor(gameState?.table.find(e => e.card === card)?.playerId);
 
-    // playGroups drives the TableArea display: each entry is one player's play,
-    // rendered as a cascade group stacked on top of previous groups.
-    let playGroups: PlayGroup[] = $state([]);
-    // Which play group is currently hidden while its flying clone is in flight.
-    let hiddenGroups: Set<number> = $state(new Set());
+        const scx = sourceRect.left + sourceRect.width / 2;
+        const scy = sourceRect.top + sourceRect.height / 2;
+        const ecx = endRect ? endRect.left + endRect.width / 2 : scx;
+        const ecy = endRect ? endRect.top + endRect.height / 2 : scy;
 
-    // Returns the viewport rects of all .table-card-slot elements inside a specific
-    // .play-group. Called after tick() so the group is in the DOM even if hidden.
-    function getPlayGroupRects(groupIndex: number): DOMRect[] {
-        if (!tableSlotEl) return [];
-        const groups = tableSlotEl.querySelectorAll('.play-group');
-        const group = groups[groupIndex];
-        if (!group) return [];
-        return Array.from(group.querySelectorAll('.table-card-slot'))
-            .map(el => (el as HTMLElement).getBoundingClientRect());
-    }
-
-    async function runFlyAnimation(sourceRects: DOMRect[], cardIds: CardId[], groupIndex: number) {
-        const endRects = getPlayGroupRects(groupIndex);
-
-        const rotation = playGroups[groupIndex]?.rotation ?? 0;
-
-        flyingCards = cardIds.map((cardId, i) => {
-            const sr = sourceRects[i] ?? sourceRects[0];
-            const er = endRects[i] ?? endRects[endRects.length - 1];
-            // Use bbox centres for both source and destination.
-            // getBoundingClientRect() returns the axis-aligned bbox of the (possibly
-            // rotated) element, so .left/.top are bbox extremes, not the card corner.
-            // Rotation doesn't move the centre, so centering the clone on the bbox
-            // centre gives a pixel-perfect match when the real card is revealed.
-            const scx = sr.left + sr.width  / 2;
-            const scy = sr.top  + sr.height / 2;
-            const ecx = er ? er.left + er.width  / 2 : scx;
-            const ecy = er ? er.top  + er.height / 2 : scy;
-            return {
-                cardId,
-                sx: scx - CARD_W / 2,
-                sy: scy - CARD_H / 2,
-                ex: ecx - CARD_W / 2,
-                ey: ecy - CARD_H / 2,
-                rotation,
-                active: false,
-            };
-        });
+        flyingCard = {
+            cardId: card,
+            sx: scx - CARD_W / 2,
+            sy: scy - CARD_H / 2,
+            ex: ecx - CARD_W / 2,
+            ey: ecy - CARD_H / 2,
+            rotation,
+            active: false,
+        };
 
         await new Promise<void>(resolve => {
             requestAnimationFrame(() => {
                 requestAnimationFrame(() => {
-                    flyingCards = flyingCards.map(c => ({ ...c, active: true }));
+                    if (flyingCard) flyingCard = { ...flyingCard, active: true };
                     setTimeout(resolve, ANIM_MS + 20);
                 });
             });
         });
 
-        flyingCards = [];
-        hiddenGroups = new Set();
+        flyingCard = null;
         hiddenCards = new Set();
     }
 
-    async function triggerOpponentAnimation(playerId: string, newCards: CardId[], groupIndex: number) {
+    async function animateOpponentPlay(card: CardId, playerId: string) {
         const idx = opponents.findIndex(o => o.id === playerId);
         const fromEl = opponentSlotEls[idx];
         if (!fromEl || !tableSlotEl) return;
 
-        hiddenGroups = new Set([groupIndex]);
+        hiddenCards = new Set([card]);
         await tick();
 
-        const from = fromEl.getBoundingClientRect();
-        const sourceRects = newCards.map(() => from);
-        await runFlyAnimation(sourceRects, newCards, groupIndex);
+        await runFlyAnimation(fromEl.getBoundingClientRect(), card);
+    }
+
+    // Server just confirmed our own play landed on the table — the entry was only
+    // added a moment ago, so wait for the DOM to catch up before runFlyAnimation
+    // measures it (mirrors animateOpponentPlay above).
+    async function animateOwnPlay(card: CardId, rects: DOMRect[]) {
+        hiddenCards = new Set([card]);
+        await tick();
+        await runFlyAnimation(rects[0] ?? new DOMRect(), card);
+        playInFlight = false;
     }
 
     async function handleSubmit(type: string, cards: CardId[], rects: DOMRect[]) {
-        if (type !== 'play' || cards.length === 0 || !tableSlotEl) {
+        if (type !== 'play' || cards.length === 0) {
             await transport.submitAction({ type, cards });
             return;
         }
 
-        // Pre-add our play group so the hidden slot is in the DOM before tick().
-        playGroups = [...playGroups, { cards, rotation: SLOT_ROTATION['south'] ?? 0 }];
-        const groupIndex = playGroups.length - 1;
+        // Refuse to start a second play while one is still settling — see playInFlight.
+        if (playInFlight) return;
+        playInFlight = true;
 
+        // Hide the card from the hand immediately for responsiveness, but it isn't
+        // added to the table until the server confirms it (see onStateUpdate) — a
+        // rejection then just means un-hiding it, nothing to undo on the table.
+        pendingPlay = { cards, rects };
         hiddenCards = new Set(cards);
-        hiddenGroups = new Set([groupIndex]);
 
         transport.submitAction({ type, cards }).catch(() => {});
-        await tick();
-
-        await runFlyAnimation(rects, cards, groupIndex);
     }
 </script>
 
@@ -210,7 +239,7 @@
         {/each}
 
         <div class="slot table-slot" style="grid-area: table" bind:this={tableSlotEl}>
-            <TableArea {playGroups} message={gameState.message} {hiddenGroups} />
+            <TableArea table={gameState.table} {rotationFor} {hiddenCards} />
         </div>
 
         <div class="slot south-slot" style="grid-area: south">
@@ -218,6 +247,8 @@
                 cards={me.hand ?? []}
                 actions={gameState.actions}
                 hiddenCards={hiddenCards}
+                busy={playInFlight}
+                message={gameState.message ?? ''}
                 onsubmit={handleSubmit}
             />
         </div>
@@ -225,16 +256,16 @@
         <p class="connecting">Connecting to game…</p>
     {/if}
 
-    {#each flyingCards as flying (flying.cardId)}
+    {#if flyingCard}
         <div
             class="flying-card"
-            class:animating={flying.active}
-            style="--sx: {flying.sx}px; --sy: {flying.sy}px; --ex: {flying.ex}px; --ey: {flying.ey}px; --er: {flying.rotation}deg"
+            class:animating={flyingCard.active}
+            style="--sx: {flyingCard.sx}px; --sy: {flyingCard.sy}px; --ex: {flyingCard.ex}px; --ey: {flyingCard.ey}px; --er: {flyingCard.rotation}deg"
             aria-hidden="true"
         >
-            <Card cardId={flying.cardId} interactive={false} />
+            <Card cardId={flyingCard.cardId} interactive={false} />
         </div>
-    {/each}
+    {/if}
 </main>
 
 <style>

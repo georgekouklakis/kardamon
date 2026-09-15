@@ -1,174 +1,139 @@
 import type { WebSocket } from 'ws';
-import {
-    createGame, addPlayer, startRound, submitPass, playCard,
-    settleTrick, trickComplete, currentActiveSeat, getStateFor,
-} from './game/hearts.js';
-import { getBotPass, getBotPlay } from './game/bot.js';
-import type { HeartsGame } from './game/types.js';
+import { HeartsController } from './game/hearts-controller.js';
+import { KseriController } from './game/kseri-controller.js';
+import type { MatchResultPayload, RoomController, RoomIO } from './game/room-controller.js';
 
-const BOT_NAMES = ['Alice', 'Bob', 'Carol'];
-const TRICK_DISPLAY_MS = 1500;
-const BOT_THINK_MS = 850;
-const NEXT_ROUND_DELAY_MS = 4500;
+// How long a room is kept alive in memory with no connected human before it's discarded.
+const ROOM_ABANDONED_MS = 10 * 60 * 1000;
 
 const PLATFORM_API_URL = process.env.PLATFORM_API_URL;
 const INTERNAL_API_KEY = process.env.INTERNAL_API_KEY ?? 'dev-internal-key';
 
-export class RoomManager {
-    private games = new Map<string, HeartsGame>();
-    private connections = new Map<string, WebSocket>();
+const DEFAULT_GAME = 'hearts';
+const GAME_REGISTRY: Record<string, (roomId: string, io: RoomIO) => RoomController> = {
+    hearts: (roomId, io) => new HeartsController(roomId, io),
+    kseri: (roomId, io) => new KseriController(roomId, io),
+};
 
-    getOrCreate(roomId: string): HeartsGame {
-        if (!this.games.has(roomId)) {
-            this.games.set(roomId, createGame(roomId));
+export class RoomManager {
+    private rooms = new Map<string, RoomController>();
+    private connections = new Map<string, WebSocket>();
+    private cleanupTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+    getOrCreate(roomId: string, gameType: string = DEFAULT_GAME): RoomController {
+        if (!this.rooms.has(roomId)) {
+            const factory = GAME_REGISTRY[gameType] ?? GAME_REGISTRY[DEFAULT_GAME]!;
+            const io: RoomIO = {
+                broadcast: () => this.broadcast(roomId),
+                sendError: (playerId, message) => this.sendError(playerId, message),
+                reportResult: (payload) => this.reportResult(payload),
+            };
+            this.rooms.set(roomId, factory(roomId, io));
         }
-        return this.games.get(roomId)!;
+        return this.rooms.get(roomId)!;
     }
 
-    joinGame(ws: WebSocket, roomId: string, playerId: string, playerName: string): string | null {
-        const game = this.getOrCreate(roomId);
+    joinGame(ws: WebSocket, roomId: string, playerId: string, playerName: string, gameType?: string): string | null {
+        const room = this.getOrCreate(roomId, gameType);
 
-        if (game.phase !== 'waiting') return 'Game already in progress';
-        if (game.players.length >= 4) return 'Room is full';
-
-        try {
-            addPlayer(game, playerId, playerName);
-        } catch (e) {
-            return String(e);
+        // Same player reconnecting (page refresh, dropped connection, etc.) — reattach
+        // to their existing seat instead of trying to add them as a brand-new player.
+        if (room.hasPlayer(playerId)) {
+            this.clearCleanupTimer(roomId);
+            this.attachSocket(ws, room, roomId, playerId);
+            ws.send(JSON.stringify(room.getStateFor(playerId)));
+            return null;
         }
 
+        const err = room.addPlayer(playerId, playerName);
+        if (err) return err;
+
+        this.clearCleanupTimer(roomId);
+        this.attachSocket(ws, room, roomId, playerId);
+
+        room.start();
+        this.broadcast(roomId);
+        return null;
+    }
+
+    private attachSocket(ws: WebSocket, room: RoomController, roomId: string, playerId: string): void {
         this.connections.set(playerId, ws);
 
         ws.on('message', (raw) => {
             try {
                 const action = JSON.parse(raw.toString()) as { type: string; cards: string[] };
-                this.handleAction(game, playerId, action);
+                room.handleAction(playerId, action);
             } catch { /* ignore malformed messages */ }
         });
 
         ws.on('close', () => {
-            this.connections.delete(playerId);
-        });
-
-        this.fillBotsAndStart(game, roomId);
-        this.broadcast(game);
-        return null;
-    }
-
-    private fillBotsAndStart(game: HeartsGame, roomId: string): void {
-        let n = 0;
-        while (game.players.length < 4) {
-            const botId = `bot-${roomId}-${n}`;
-            const botName = BOT_NAMES[n] ?? `Bot ${n + 1}`;
-            addPlayer(game, botId, botName, true);
-            n++;
-        }
-        startRound(game);
-        this.runBotPhase(game);
-    }
-
-    private handleAction(game: HeartsGame, playerId: string, action: { type: string; cards: string[] }): void {
-        if (action.type === 'pass') {
-            const err = submitPass(game, playerId, action.cards);
-            if (err) return;
-            this.broadcast(game);
-            if (game.phase === 'playing') this.runBotPhase(game);
-        } else if (action.type === 'play' && action.cards[0]) {
-            const err = playCard(game, playerId, action.cards[0]);
-            if (err) return;
-            this.handleAfterCard(game);
-        }
-    }
-
-    private handleAfterCard(game: HeartsGame): void {
-        this.broadcast(game);
-
-        if (trickComplete(game)) {
-            // Hold the complete trick on screen, then settle
-            setTimeout(() => {
-                settleTrick(game);
-                this.broadcast(game);
-
-                if (game.phase === 'game-over') {
-                    this.reportResult(game);
-                } else if (game.phase === 'round-over') {
-                    setTimeout(() => {
-                        startRound(game);
-                        this.broadcast(game);
-                        this.runBotPhase(game);
-                    }, NEXT_ROUND_DELAY_MS);
-                } else {
-                    this.runBotPhase(game);
-                }
-            }, TRICK_DISPLAY_MS);
-        } else {
-            this.runBotPhase(game);
-        }
-    }
-
-    private runBotPhase(game: HeartsGame): void {
-        if (game.phase === 'passing') {
-            for (const p of game.players.filter(q => q.isBot && q.pendingPass === null)) {
-                submitPass(game, p.id, getBotPass(p));
+            // A reconnect may have already replaced this entry with a newer socket —
+            // only clear it if this (now-stale) socket is still the registered one.
+            if (this.connections.get(playerId) === ws) {
+                this.connections.delete(playerId);
+                this.scheduleCleanupIfAbandoned(room, roomId);
             }
-            this.broadcast(game);
-            // submitPass may have transitioned phase to 'playing' — check at runtime
-            const phaseAfterPass = (game as HeartsGame).phase;
-            if (phaseAfterPass === 'playing') this.runBotPhase(game);
-            return;
+        });
+    }
+
+    // A room whose only occupants are bots (every human has disconnected and never
+    // came back) is otherwise kept in memory forever with nothing to clean it up —
+    // schedule its removal, cancelled if any human reconnects in the meantime.
+    private scheduleCleanupIfAbandoned(room: RoomController, roomId: string): void {
+        if (room.describe().humanCount === 0) return; // no humans ever joined — shouldn't happen, but harmless
+
+        const hasConnectedHuman = [...this.connections.entries()].some(([playerId, ws]) =>
+            room.hasPlayer(playerId) && ws.readyState === 1, // 1 = OPEN
+        );
+        if (hasConnectedHuman) return;
+
+        this.clearCleanupTimer(roomId);
+        const timer = setTimeout(() => {
+            this.rooms.delete(roomId);
+            this.cleanupTimers.delete(roomId);
+        }, ROOM_ABANDONED_MS);
+        this.cleanupTimers.set(roomId, timer);
+    }
+
+    private clearCleanupTimer(roomId: string): void {
+        const timer = this.cleanupTimers.get(roomId);
+        if (timer) {
+            clearTimeout(timer);
+            this.cleanupTimers.delete(roomId);
         }
-
-        if (game.phase !== 'playing') return;
-
-        const activeSeat = currentActiveSeat(game);
-        const active = game.players.find(p => p.seat === activeSeat);
-        if (!active?.isBot) return;
-
-        setTimeout(() => {
-            if (game.phase !== 'playing') return;
-            const card = getBotPlay(game, active.id);
-            if (!card) return;
-            const err = playCard(game, active.id, card);
-            if (!err) this.handleAfterCard(game);
-        }, BOT_THINK_MS);
     }
 
-    private broadcast(game: HeartsGame): void {
-        for (const player of game.players) {
-            const ws = this.connections.get(player.id);
-            if (!ws || ws.readyState !== 1) continue; // 1 = OPEN
-            ws.send(JSON.stringify(getStateFor(game, player.id)));
+    private sendError(playerId: string, message: string): void {
+        const ws = this.connections.get(playerId);
+        if (!ws || ws.readyState !== 1) return; // 1 = OPEN
+        ws.send(JSON.stringify({ error: message }));
+    }
+
+    private broadcast(roomId: string): void {
+        const room = this.rooms.get(roomId);
+        if (!room) return;
+        for (const [playerId, ws] of this.connections) {
+            if (!room.hasPlayer(playerId) || ws.readyState !== 1) continue; // 1 = OPEN
+            ws.send(JSON.stringify(room.getStateFor(playerId)));
         }
     }
 
-    listRooms(): Array<{ id: string; players: number; phase: string }> {
-        return Array.from(this.games.values()).map(g => ({
-            id: g.id,
-            players: g.players.filter(p => !p.isBot).length,
-            phase: g.phase,
-        }));
+    listRooms(): Array<{ id: string; players: number; phase: string; game: string }> {
+        return Array.from(this.rooms.entries()).map(([id, room]) => {
+            const { phase, humanCount } = room.describe();
+            return { id, players: humanCount, phase, game: room.gameType };
+        });
     }
 
-    private reportResult(game: HeartsGame): void {
+    private reportResult(payload: MatchResultPayload): void {
         if (!PLATFORM_API_URL) return;
-        const minScore = Math.min(...game.players.map(p => p.score));
         fetch(`${PLATFORM_API_URL}/scores/games/result`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 'x-internal-api-key': INTERNAL_API_KEY,
             },
-            body: JSON.stringify({
-                rounds: game.roundNumber,
-                players: game.players.map(p => ({
-                    userId: p.isBot ? undefined : p.id,
-                    name: p.name,
-                    score: p.score,
-                    seat: p.seat,
-                    isBot: p.isBot,
-                    won: p.score === minScore,
-                })),
-            }),
+            body: JSON.stringify(payload),
         }).catch(() => {});
     }
 }
